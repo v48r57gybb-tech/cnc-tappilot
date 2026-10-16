@@ -1,0 +1,59 @@
+name: Pubblica CNC TapPilot
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Installa libreria immagini
+        run: python -m pip install Pillow==12.0.0
+      - name: Prepara sito, icone e controlli
+        run: |
+          python - <<'PY'
+          import base64,io,json,re,subprocess
+          from pathlib import Path
+          from PIL import Image
+          text=Path('index.html').read_text(encoding='utf-8')
+          site=Path('site');(site/'icons').mkdir(parents=True,exist_ok=True)
+          image=Image.open(io.BytesIO(base64.b64decode(re.search(r'<img id="logo" src="data:image/png;base64,([^"]+)"',text).group(1)))).convert('RGB')
+          for size,name in [(180,'apple-touch-icon.png'),(192,'icon-192.png'),(512,'icon-512.png')]:
+              image.resize((size,size),Image.Resampling.LANCZOS).save(site/'icons'/name,optimize=True)
+          (site/'index.html').write_text(text,encoding='utf-8')
+          manifest={'id':'./','name':'CNC TapPilot · Maschiatura','short_name':'TapPilot','lang':'it','start_url':'./','scope':'./','display':'standalone','background_color':'#eff3f7','theme_color':'#084f85','icons':[{'src':'icons/icon-192.png','sizes':'192x192','type':'image/png','purpose':'any'},{'src':'icons/icon-512.png','sizes':'512x512','type':'image/png','purpose':'any'}]}
+          (site/'manifest.webmanifest').write_text(json.dumps(manifest,ensure_ascii=False),encoding='utf-8')
+          sw="const C='cnc-tappilot-v0.1.2',F=['./','./index.html','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/apple-touch-icon.png'];self.addEventListener('install',e=>e.waitUntil(caches.open(C).then(c=>c.addAll(F))));self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k.startsWith('cnc-tappilot-')&&k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));self.addEventListener('fetch',e=>{if(e.request.method==='GET'&&new URL(e.request.url).origin===self.location.origin)e.respondWith(fetch(e.request).catch(()=>caches.match(e.request).then(r=>r||Promise.reject(Error('Non disponibile offline'))))) });"
+          (site/'sw.js').write_text(sw,encoding='utf-8');(site/'.nojekyll').touch()
+          scripts=re.findall(r'<script>(.*?)</script>',text,re.S)
+          assert len(scripts)==1
+          code=scripts[0]
+          subprocess.run(['node','--check'],input=code,text=True,check=True)
+          subprocess.run(['node','--check',str(site/'sw.js')],check=True)
+          core=code.split('const $=id=>')[0]
+          checks="const a=require('node:assert/strict');a.equal(catalog.length,180);a.equal(materials.length,73);a.equal(number('1,25'),1.25);a(Number.isNaN(number('1,2,3')));a.equal(calculate(8,1.25,30*.3048).s,363);a.equal(calculate(8,1.25,30*.3048).f,453.75);a.equal(calculate(8,1.25,30*.3048,100).f,125);a.equal(calculate(8,1.25,50*.3048).s,606);a.equal(calculate(8,1.25,50*.3048).f,757.5);a.throws(()=>calculate(0,1,10));a.throws(()=>calculate(8,0,10));a.throws(()=>calculate(8,1,0));a.equal(catalog.find(x=>x.f==='UNF'&&x.n.startsWith('1/4')).p,25.4/28);a.equal(catalog.find(x=>x.f==='G').drill,8.8);console.log('14 test logici superati; nessuna validazione in macchina.');"
+          subprocess.run(['node','-e',core+checks],check=True)
+          PY
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4
+        id: deployment
