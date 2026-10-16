@@ -40,7 +40,7 @@ jobs:
           (site/'index.html').write_text(text,encoding='utf-8')
           manifest={'id':'./','name':'CNC TapPilot · Maschiatura','short_name':'TapPilot','lang':'it','start_url':'./','scope':'./','display':'standalone','background_color':'#eff3f7','theme_color':'#084f85','icons':[{'src':'icons/icon-192.png','sizes':'192x192','type':'image/png','purpose':'any'},{'src':'icons/icon-512.png','sizes':'512x512','type':'image/png','purpose':'any'}]}
           (site/'manifest.webmanifest').write_text(json.dumps(manifest,ensure_ascii=False),encoding='utf-8')
-          sw="const C='cnc-tappilot-v0.1.2',F=['./','./index.html','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/apple-touch-icon.png'];self.addEventListener('install',e=>e.waitUntil(caches.open(C).then(c=>c.addAll(F))));self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k.startsWith('cnc-tappilot-')&&k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));self.addEventListener('fetch',e=>{if(e.request.method==='GET'&&new URL(e.request.url).origin===self.location.origin)e.respondWith(fetch(e.request).catch(()=>caches.match(e.request).then(r=>r||Promise.reject(Error('Non disponibile offline'))))) });"
+          sw="const C='cnc-tappilot-v0.1.3',F=['./','./index.html','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png','./icons/apple-touch-icon.png'];self.addEventListener('install',e=>e.waitUntil(caches.open(C).then(c=>c.addAll(F))));self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k.startsWith('cnc-tappilot-')&&k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));self.addEventListener('fetch',e=>{if(e.request.method==='GET'&&new URL(e.request.url).origin===self.location.origin)e.respondWith(fetch(e.request).catch(()=>caches.match(e.request).then(r=>r||Promise.reject(Error('Non disponibile offline'))))) });"
           (site/'sw.js').write_text(sw,encoding='utf-8');(site/'.nojekyll').touch()
           scripts=re.findall(r'<script>(.*?)</script>',text,re.S)
           assert len(scripts)==1
@@ -50,6 +50,39 @@ jobs:
           core=code.split('const $=id=>')[0]
           checks="const a=require('node:assert/strict');a.equal(catalog.length,180);a.equal(materials.length,73);a.equal(number('1,25'),1.25);a(Number.isNaN(number('1,2,3')));a.equal(calculate(8,1.25,30*.3048).s,363);a.equal(calculate(8,1.25,30*.3048).f,453.75);a.equal(calculate(8,1.25,30*.3048,100).f,125);a.equal(calculate(8,1.25,50*.3048).s,606);a.equal(calculate(8,1.25,50*.3048).f,757.5);a.throws(()=>calculate(0,1,10));a.throws(()=>calculate(8,0,10));a.throws(()=>calculate(8,1,0));a.equal(catalog.find(x=>x.f==='UNF'&&x.n.startsWith('1/4')).p,25.4/28);a.equal(catalog.find(x=>x.f==='G').drill,8.8);console.log('14 test logici superati; nessuna validazione in macchina.');"
           subprocess.run(['node','-e',core+checks],check=True)
+          PY
+      - name: Applica menu materiali e controlla sintassi finale
+        run: |
+          python - <<'PY'
+          import re,subprocess
+          from pathlib import Path
+          path=Path('site/index.html');text=path.read_text(encoding='utf-8')
+          old='<input id="material" list="materials" required placeholder="C45, 316L, 6082">'
+          assert text.count(old)==1,'Campo materiale inatteso'
+          text=text.replace(old,'<select id="material" required></select>',1)
+          block='<label for="profile">Profilo corrispondente allo stato reale</label><select id="profile"></select>'
+          marker='<label for="material">Qualità / nome</label>'
+          assert block in text and marker in text,'Sezione materiali inattesa'
+          text=text.replace(block,'',1).replace(marker,'<label for="profile">Famiglia / stato materiale di riferimento</label><select id="profile"></select><label for="material">Qualità specifica (elenco filtrato)</label>',1)
+          text=text.replace('v0.1.2 · Riferimenti di maschiatura','v0.1.3 · Riferimenti di maschiatura',1)
+          patch=r"""
+          (()=>{'use strict';
+          const carbon='S235|S275|S355|C10|C15|C20|AISI 1018|AISI 1020'.split('|'),medium='C35|C40|C45|C50|AISI 1045'.split('|'),inox300='AISI 303|AISI 304|AISI 304L|AISI 316|AISI 316L|AISI 321'.split('|'),inox400='AISI 410|AISI 420|AISI 430'.split('|'),al='EN AW-2011|EN AW-2017|EN AW-2024|EN AW-5083|EN AW-5754|EN AW-6060|EN AW-6061|EN AW-6082|EN AW-7075'.split('|');
+          const groups=[carbon,medium,['1.2311 / P20','1.2379 / D2','1.2344 / H13','1.2510 / O1'],['Acciaio colato (qualità da verificare)'],inox300,inox400,al,['EN AC-42100','EN AC-43000'],['EN AC-46000'],['CuZn39Pb3','CuZn37'],['CuSn12','CuAl10Ni5Fe4'],['Cu-ETP','Cu-OF'],['Gunmetal (qualità da verificare)'],['EN-GJL-200','EN-GJL-250','EN-GJL-300'],['EN-GJS-400-15','EN-GJS-500-7','EN-GJS-600-3'],['Ghisa legata (qualità da verificare)'],['Ghisa malleabile (qualità da verificare)'],['Lega di magnesio (qualità da verificare)'],['Inconel 625','Inconel 718','Hastelloy C276'],['Nimonic (qualità da verificare)'],['Titanio grado 2','Ti-6Al-4V grado 5'],['POM','PA6','PA66','PEEK','PTFE','PVC','PMMA'],['Zinco pressofuso (qualità da verificare)']];
+          function choices(keep=''){const ix=$('profile').value,r=$('process').value==='roll';let names=[];if(ix==='uncovered')names=materials;else if(ix!==''){const i=Number(ix);names=r?(i<=3?[...carbon,...medium]:i<=6?[...inox300,...inox400]:i<=8?al:i<=10?['EN AC-42100','EN AC-43000']:['Cu-ETP','Cu-OF','CuZn39Pb3','CuZn37','CuSn12','CuAl10Ni5Fe4']):(groups[i]||[])}$('material').replaceChildren();opt('material','',ix===''?'Prima scegli famiglia / stato':'Seleziona una qualità');[...new Set(names)].forEach(n=>opt('material',n,n));$('material').disabled=ix==='';if(keep&&names.includes(keep))$('material').value=keep}
+          const baseProfiles=profiles;profiles=function(){baseProfiles();opt('profile','uncovered','Altri materiali / profilo non documentato');choices()};$('process').onchange=()=>{profiles();stale()};$('profile').onchange=()=>{choices();$('ack').checked=false;stale()};$('material').addEventListener('change',()=>{$('ack').checked=false;stale()});
+          const help=document.createElement('p');help.className='note';help.textContent='1. Scegli famiglia/stato. 2. Scegli la qualità dal menu. Gli elenchi raggruppano le qualità per identificazione: NON verificano equivalenza di lavorabilità, durezza o velocità. Verifica sempre il profilo tabellare; ad esempio M12 inox HB200 è un identificativo del materiale, non un maschio M12. Gli altri materiali restano senza S/F automatici.';$('material').after(help);
+          const baseSubmit=$('form').onsubmit;$('form').onsubmit=e=>{if(!$('profile').value){e.preventDefault();stale();$('error').textContent='Sezione 3: scegli prima la famiglia / stato del materiale.';return}if(!$('material').value){e.preventDefault();stale();$('error').textContent='Sezione 3: seleziona una qualità dal menu.';return}baseSubmit(e);if(current&&current.s===null)$('status').textContent='Nessun S/F automatico: profilo, geometria o famiglia non coperti. La formula non è stata applicata.';else if(current)$('status').textContent='Calcolo di riferimento generato: verifica le condizioni prima dell’uso.'};
+          const baseList=list;list=function(){baseList();let records;try{records=history()}catch(e){return}Array.from($('list').children).forEach((box,i)=>{const record=records[i];if(!record)return;const b=Array.from(box.querySelectorAll('button')).find(x=>x.textContent==='Riprendi');if(!b)return;b.onclick=()=>{if(!confirm('Sostituire la selezione attuale?'))return;const v=record.input;$('process').value=v.process;profiles();$('profile').value=v.profile;choices(v.material);for(const k of fields)if(!['process','profile','material','thread'].includes(k)&&typeof v[k]==='string')$(k).value=v[k];threads();$('thread').value=v.thread;info();$('ack').checked=false;stale();$('form').scrollIntoView();if(!$('material').value)$('status').textContent='Scheda ripresa: riseleziona una qualità e conferma il profilo.'}})};
+          profiles();list();
+          })();
+          """
+          text=text.replace('</script>',patch+'\n</script>',1)
+          code=re.findall(r'<script>(.*?)</script>',text,re.S)[0]
+          subprocess.run(['node','--check'],input=code,text=True,check=True)
+          assert '<select id="material" required>' in text
+          assert 'M8' in text and "['M','UNC','UNF','UNEF']" in text
+          path.write_text(text,encoding='utf-8')
           PY
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
